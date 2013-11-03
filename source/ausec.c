@@ -37,6 +37,8 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <libintl.h>
+#include <locale.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -46,6 +48,8 @@
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 #include <openssl/hmac.h>
+
+#define _(STRING) gettext(STRING)
 
 static const char * AUSEC_XATTR_NAME = "user.integrity.ausec";
 
@@ -95,7 +99,7 @@ static void parse_arguments(int argc, char * argv[])
 				break;
 			case 'k':
 				if (hmac_key != NULL)
-					fprintf(stderr, "HMAC key was already previously set\n");
+					fprintf(stderr, _("HMAC key was already previously set\n"));
 				hmac_key = optarg;
 				break;
 			case 'h':
@@ -142,7 +146,7 @@ static char * get_xattr(FILE * fd)
 	return buffer;
 
 	read_failure:
-		fprintf(stderr, "could not read attribute: %s\n", strerror(errno));
+		fprintf(stderr, _("could not read attribute: %s\n"), strerror(errno));
 
 	return NULL;
 }
@@ -150,7 +154,7 @@ static char * get_xattr(FILE * fd)
 static void set_xattr(FILE * fd, char * value)
 {
 	if (fsetxattr(fileno(fd), AUSEC_XATTR_NAME, value, strlen(value), 0) == -1)
-		fprintf(stderr, "could not set attribute: %s\n", strerror(errno));
+		fprintf(stderr, _("could not set attribute: %s\n"), strerror(errno));
 }
 
 static void audit_file(const char * path, FILE * file)
@@ -174,7 +178,7 @@ static void audit_file(const char * path, FILE * file)
 
 	if (ferror(file))
 	{
-		fprintf(stderr, "error while reading `%s': %s\n", path, strerror(errno));
+		fprintf(stderr, _("error while reading `%s': %s\n"), path, strerror(errno));
 		return;
 	}
 
@@ -191,9 +195,9 @@ static void audit_file(const char * path, FILE * file)
 	if (check)
 	{
 		if (current_xattr_value == NULL)
-			fprintf(stdout, "no signature found!\n");
+			fprintf(stdout, _("no signature found!\n"));
 		else if (strcmp(current_xattr_value, new_xattr_value))
-			fprintf(stdout, "integrity mismatch!\n");
+			fprintf(stdout, _("integrity mismatch!\n"));
 	}
 
 	if (update)
@@ -217,7 +221,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 
 		if (lstat(relative_path, &file_stat) != 0)
 		{
-			fprintf(stderr, "can't stat file or directory `%s': %s\n", absolute_path, strerror(errno));
+			fprintf(stderr, _("can't stat file or directory `%s': %s\n"), absolute_path, strerror(errno));
 			continue;
 		}
 
@@ -226,13 +230,13 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 			DIR * new_directory;
 			if ((new_directory = opendir(relative_path)) == NULL)
 			{
-				fprintf(stderr, "error when opening directory `%s': %s\n", absolute_path, strerror(errno));
+				fprintf(stderr, _("error when opening directory `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
 			if (fchdir(dirfd(new_directory)) != 0)
 			{
-				fprintf(stderr, "can't change directory to `%s': %s\n", absolute_path, strerror(errno));
+				fprintf(stderr, _("can't change directory to `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
@@ -242,7 +246,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 
 			if (fchdir(dirfd(directory)) != 0)
 			{
-				fprintf(stderr, "could not return to previous directory: %s\n", strerror(errno));
+				fprintf(stderr, _("could not return to previous directory: %s\n"), strerror(errno));
 				// can't do anything more if it happens, so it's time to panic
 				exit(-1);
 			}
@@ -252,7 +256,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 			FILE * file = fopen(relative_path, "rb");
 
 			if (!file)
-				fprintf(stderr, "can't open `%s': %s\n", absolute_path, strerror(errno));
+				fprintf(stderr, _("can't open `%s': %s\n"), absolute_path, strerror(errno));
 
 			audit_file(absolute_path, file);
 
@@ -266,7 +270,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 	}
 
 	if (errno != 0)
-		fprintf(stderr, "error while walking directory `%s': %s\n", path, strerror(errno));
+		fprintf(stderr, _("error while walking directory `%s': %s\n"), path, strerror(errno));
 }
 
 static void walk_directory(const char * path)
@@ -274,13 +278,13 @@ static void walk_directory(const char * path)
 	DIR * starting_directory;
 	if ((starting_directory = opendir(path)) == NULL)
 	{
-		fprintf(stderr, "error when opening directory `%s': %s", path, strerror(errno));
+		fprintf(stderr, _("error when opening directory `%s': %s"), path, strerror(errno));
 		return;
 	}
 
 	if (fchdir(dirfd(starting_directory)) != 0)
 	{
-		fprintf(stderr, "can't change directory to `%s': %s\n", path, strerror(errno));
+		fprintf(stderr, _("can't change directory to `%s': %s\n"), path, strerror(errno));
 		return;
 	}
 
