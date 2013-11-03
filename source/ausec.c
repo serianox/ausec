@@ -53,7 +53,18 @@
 
 static const char * AUSEC_XATTR_NAME = "user.integrity.ausec";
 
-static bool check = false, update = false;
+static struct
+{
+	bool check;
+	bool update;
+	bool verbose;
+}
+configuration =
+{
+	.check = false,
+	.update = false,
+	.verbose = false,
+};
 
 static char * hmac_key = NULL;
 
@@ -77,29 +88,30 @@ static void parse_arguments(int argc, char * argv[])
 
 	static const struct option long_options[] =
 	{
-		//{"verbose", no_argument, NULL, -'v'},
+		{"verbose", no_argument, NULL, 0},
 		//{"version", no_argument, NULL, 'v'},
-		//{"help", no_argument, NULL, 'h'},
+		{"help", no_argument, NULL, 'h'},
 		{"check", no_argument, NULL, 'c'},
 		{"update", no_argument, NULL, 'u'},
 		{"key", required_argument, NULL, 'k'},
 		{NULL, no_argument, NULL, 0}
 	};
 
-	int option;
-	while ((option = getopt_long(argc, argv, options, long_options, NULL)) != -1)
+	int option, option_index;
+	while ((option = getopt_long(argc, argv, options, long_options, &option_index)) != -1)
 	{
 		switch (option)
 		{
 			case 'c':
-				check = true;
+				configuration.check = true;
 				break;
 			case 'u':
-				update = true;
+				configuration.update = true;
 				break;
 			case 'k':
 				if (hmac_key != NULL)
 					fprintf(stderr, _("HMAC key was already previously set\n"));
+
 				hmac_key = optarg;
 				break;
 			case 'h':
@@ -107,12 +119,14 @@ static void parse_arguments(int argc, char * argv[])
 			case ':':
 				usage(0[argv]);
 			case 0:
-				// TODO
+				if (strcmp("verbose", long_options[option_index].name) == 0)
+					configuration.verbose = true;
+
 				break;
 		}
 	}
 
-	if (!check && !update)
+	if (!configuration.check && !configuration.update)
 	{
 		// nothing to do...
 		exit(0);
@@ -192,7 +206,7 @@ static void audit_file(const char * path, FILE * file)
 		sprintf(&(i * 2)[new_xattr_value], "%02x", i[digest]);
 	new_xattr_value[digest_length * 2] = '\0';
 
-	if (check)
+	if (configuration.check)
 	{
 		if (current_xattr_value == NULL)
 			fprintf(stdout, _("no signature found!\n"));
@@ -200,7 +214,7 @@ static void audit_file(const char * path, FILE * file)
 			fprintf(stdout, _("integrity mismatch!\n"));
 	}
 
-	if (update)
+	if (configuration.update)
 		set_xattr(file, new_xattr_value);
 }
 
