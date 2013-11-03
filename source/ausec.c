@@ -147,6 +147,13 @@ static void audit_file(const char * path, FILE * file)
 
 	HMAC_Init_ex(&hmac_context, NULL, 0, NULL, NULL);
 
+	fseek(file, 0L, SEEK_END);
+
+	long file_length = ftell(file);
+	HMAC_Update(&hmac_context, (const unsigned char *)&file_length, sizeof file_length);
+
+	fseek(file, 0L, SEEK_SET);
+
 	uint8_t input_buffer[4096];
 	size_t read_size;
 
