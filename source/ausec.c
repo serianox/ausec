@@ -44,15 +44,21 @@
 #include <attr/xattr.h>
 
 #include <openssl/evp.h>
+#include <openssl/engine.h>
+#include <openssl/hmac.h>
 
 static const char * AUSEC_XATTR_NAME = "user.integrity.ausec";
 
 static bool check = false, update = false;
 
+static char * hmac_key = NULL;
+
+HMAC_CTX hmac_context;
+
 static void parse_arguments(int argc, char * argv[])
 {
 	// http://www.ibm.com/developerworks/aix/library/au-unix-getopt.html
-	static const char * options = "cu";
+	static const char * options = "cuk:";
 
 	static const struct option long_options[] =
 	{
@@ -61,11 +67,12 @@ static void parse_arguments(int argc, char * argv[])
 		//{"help", no_argument, NULL, 'h'},
 		{"check", no_argument, NULL, 'c'},
 		{"update", no_argument, NULL, 'u'},
+		{"key", required_argument, NULL, 'k'},
 		{NULL, no_argument, NULL, 0}
 	};
 
-	int option = getopt_long(argc, argv, options, long_options, NULL);
-	while (option != -1)
+	int option;
+	while ((option = getopt_long(argc, argv, options, long_options, NULL)) != -1)
 	{
 		switch (option)
 		{
@@ -74,6 +81,11 @@ static void parse_arguments(int argc, char * argv[])
 				break;
 			case 'u':
 				update = true;
+				break;
+			case 'k':
+				if (hmac_key != NULL)
+					fprintf(stderr, "HMAC key was already previously set\n");
+				hmac_key = optarg;
 				break;
 			case 'h':
 				// TODO
@@ -88,8 +100,12 @@ static void parse_arguments(int argc, char * argv[])
 				// TODO
 				break;
 		}
-		option = getopt_long(argc, argv, options, long_options, NULL);
 	}
+
+	if (hmac_key == NULL)
+		hmac_key = "";
+
+	HMAC_Init_ex(&hmac_context, hmac_key, strlen(hmac_key), EVP_sha256(), NULL);
 }
 
 static char * get_xattr(FILE * fd)
@@ -129,16 +145,13 @@ static void audit_file(const char * path, FILE * file)
 {
 	char * current_xattr_value = get_xattr(file);
 
-	EVP_MD_CTX digest_ctx;
-
-	EVP_MD_CTX_init(&digest_ctx);
-	EVP_DigestInit_ex(&digest_ctx, EVP_get_digestbyname("SHA1"), NULL);
+	HMAC_Init_ex(&hmac_context, NULL, 0, NULL, NULL);
 
 	uint8_t input_buffer[4096];
 	size_t read_size;
 
 	while ((read_size = fread(input_buffer, 1, sizeof input_buffer, file)) != 0)
-		EVP_DigestUpdate(&digest_ctx, input_buffer, read_size);
+		HMAC_Update(&hmac_context, input_buffer, read_size);
 
 	if (ferror(file))
 	{
@@ -149,16 +162,20 @@ static void audit_file(const char * path, FILE * file)
 	uint8_t digest[EVP_MAX_MD_SIZE];
 	unsigned digest_length;
 
-	EVP_DigestFinal_ex(&digest_ctx, digest, &digest_length);
-	EVP_MD_CTX_cleanup(&digest_ctx);
+	HMAC_Final(&hmac_context, digest, &digest_length);
 
 	char * new_xattr_value = (char *) malloc(digest_length * 2 + 1);
 	for (unsigned i = 0; i < digest_length; ++i)
 		sprintf(&(i * 2)[new_xattr_value], "%02x", i[digest]);
 	new_xattr_value[digest_length * 2] = '\0';
 
-	if (check && current_xattr_value != NULL && strcmp(current_xattr_value, new_xattr_value))
-		fprintf(stdout, "integrity mismatch!\n");
+	if (check)
+	{
+		if (current_xattr_value == NULL)
+			fprintf(stdout, "no signature found!\n");
+		else if (strcmp(current_xattr_value, new_xattr_value))
+			fprintf(stdout, "integrity mismatch!\n");
+	}
 
 	if (update)
 		set_xattr(file, new_xattr_value);
@@ -181,7 +198,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 
 		if (lstat(relative_path, &file_stat) != 0)
 		{
-			fprintf(stderr, "can't stat file or directory `%s': %s", absolute_path, strerror(errno));
+			fprintf(stderr, "can't stat file or directory `%s': %s\n", absolute_path, strerror(errno));
 			continue;
 		}
 
@@ -190,13 +207,13 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 			DIR * new_directory;
 			if ((new_directory = opendir(relative_path)) == NULL)
 			{
-				fprintf(stderr, "error when opening directory `%s': %s", absolute_path, strerror(errno));
+				fprintf(stderr, "error when opening directory `%s': %s\n", absolute_path, strerror(errno));
 				continue;
 			}
 
-			if (chdir(relative_path) != 0)
+			if (fchdir(dirfd(new_directory)) != 0)
 			{
-				fprintf(stderr, "can't change directory to `%s': %s", absolute_path, strerror(errno));
+				fprintf(stderr, "can't change directory to `%s': %s\n", absolute_path, strerror(errno));
 				continue;
 			}
 
@@ -206,7 +223,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 
 			if (fchdir(dirfd(directory)) != 0)
 			{
-				fprintf(stderr, "could not return to previous directory: %s", strerror(errno));
+				fprintf(stderr, "could not return to previous directory: %s\n", strerror(errno));
 				// can't do anything more if it happens, so it's time to panic
 				exit(-1);
 			}
@@ -242,14 +259,30 @@ static void walk_directory(const char * path)
 		return;
 	}
 
+	if (fchdir(dirfd(starting_directory)) != 0)
+	{
+		fprintf(stderr, "can't change directory to `%s': %s\n", path, strerror(errno));
+		return;
+	}
+
 	walk_directory_recursive(path, starting_directory);
 
 	closedir(starting_directory);
 }
 
-static void init()
+static void cleanup(void)
 {
-	OpenSSL_add_all_digests();
+	HMAC_CTX_cleanup(&hmac_context);
+}
+
+static void init(void)
+{
+	ENGINE_load_builtin_engines();
+	ENGINE_register_all_complete();
+
+	HMAC_CTX_init(&hmac_context);
+
+	atexit(&cleanup);
 }
 
 int main(int argc, char * argv[])
@@ -258,5 +291,7 @@ int main(int argc, char * argv[])
 
 	parse_arguments(argc, argv);
 
-	walk_directory(".");
+	walk_directory("test");
+
+	cleanup();
 }
