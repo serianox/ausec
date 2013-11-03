@@ -55,6 +55,17 @@ static char * hmac_key = NULL;
 
 HMAC_CTX hmac_context;
 
+static void usage(const char * program)
+{
+	printf("\
+Usage: %s [OPTION]\n\
+	-k, --key=KEY   key to be used in the signature computation\n\
+	-c, --check     check the files against theirs signatures\n\
+	-u, --update    update the files' signatures\n\
+", program);
+	exit(0);
+}
+
 static void parse_arguments(int argc, char * argv[])
 {
 	// http://www.ibm.com/developerworks/aix/library/au-unix-getopt.html
@@ -88,18 +99,19 @@ static void parse_arguments(int argc, char * argv[])
 				hmac_key = optarg;
 				break;
 			case 'h':
-				// TODO
-				break;
 			case '?':
-				// TODO
-				break;
 			case ':':
-				// TODO
-				break;
+				usage(0[argv]);
 			case 0:
 				// TODO
 				break;
 		}
+	}
+
+	if (!check && !update)
+	{
+		// nothing to do...
+		exit(0);
 	}
 
 	if (hmac_key == NULL)
@@ -116,7 +128,7 @@ static char * get_xattr(FILE * fd)
 		// don't perform diagnosis here
 		goto read_failure;
 
-	char * buffer = (char *)malloc(buffer_size + 1);
+	char * buffer = (char *) malloc(buffer_size + 1);
 
 	if (fgetxattr(fileno(fd), AUSEC_XATTR_NAME, buffer, buffer_size) == -1)
 	{
@@ -150,7 +162,7 @@ static void audit_file(const char * path, FILE * file)
 	fseek(file, 0L, SEEK_END);
 
 	long file_length = ftell(file);
-	HMAC_Update(&hmac_context, (const unsigned char *)&file_length, sizeof file_length);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_length, sizeof file_length);
 
 	fseek(file, 0L, SEEK_SET);
 
@@ -298,7 +310,7 @@ int main(int argc, char * argv[])
 
 	parse_arguments(argc, argv);
 
-	walk_directory("test");
+	walk_directory(".");
 
 	cleanup();
 }
