@@ -171,23 +171,26 @@ static void set_xattr(FILE * fd, char * value)
 		fprintf(stderr, _("could not set attribute: %s\n"), strerror(errno));
 }
 
-static void audit_file(const char * path, FILE * file)
+static void audit_file(const char * path, FILE * file, struct stat file_stat)
 {
 	char * current_xattr_value = get_xattr(file);
 
 	HMAC_Init_ex(&hmac_context, NULL, 0, NULL, NULL);
 
-	fseek(file, 0L, SEEK_END);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_dev, sizeof file_stat.st_dev);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_ino, sizeof file_stat.st_ino);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_mode, sizeof file_stat.st_mode);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_uid, sizeof file_stat.st_uid);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_gid, sizeof file_stat.st_gid);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_size, sizeof file_stat.st_size);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_mtime, sizeof file_stat.st_mtime);
+	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_ctime, sizeof file_stat.st_ctime);
 
-	long file_length = ftell(file);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_length, sizeof file_length);
-
-	fseek(file, 0L, SEEK_SET);
-
-	uint8_t input_buffer[4096];
+	// playing with memory^Wmatches
+	uint8_t input_buffer[file_stat.st_blksize];
 	size_t read_size;
 
-	while ((read_size = fread(input_buffer, 1, sizeof input_buffer, file)) != 0)
+	while ((read_size = fread(input_buffer, 1, file_stat.st_blksize, file)) != 0)
 		HMAC_Update(&hmac_context, input_buffer, read_size);
 
 	if (ferror(file))
@@ -296,7 +299,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 				exit(-1);
 			}
 
-			audit_file(absolute_path, file);
+			audit_file(absolute_path, file, file_stat);
 
 			fclose(file);
 		}
