@@ -221,7 +221,7 @@ static void audit_file(const char * path, FILE * file)
 static void walk_directory_recursive(const char * path, DIR * directory)
 {
 	struct dirent * directory_entry;
-	struct stat file_stat;
+	struct stat file_stat, second_file_stat;
 
 	while ((errno = 0, directory_entry = readdir(directory)) != NULL)
 	{
@@ -248,6 +248,18 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 				continue;
 			}
 
+			if (fstat(dirfd(new_directory), &second_file_stat) != 0)
+			{
+				fprintf(stderr, _("can't stat directory `%s': %s\n"), absolute_path, strerror(errno));
+				exit(-1);
+			}
+
+			if (file_stat.st_dev != second_file_stat.st_dev || file_stat.st_ino != second_file_stat.st_ino)
+			{
+				fprintf(stderr, _("TOCTOU detected on `%s'!\n"), absolute_path);
+				exit(-1);
+			}
+
 			if (fchdir(dirfd(new_directory)) != 0)
 			{
 				fprintf(stderr, _("can't change directory to `%s': %s\n"), absolute_path, strerror(errno));
@@ -270,7 +282,19 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 			FILE * file = fopen(relative_path, "rb");
 
 			if (!file)
-				fprintf(stderr, _("can't open `%s': %s\n"), absolute_path, strerror(errno));
+				fprintf(stderr, _("can't open file `%s': %s\n"), absolute_path, strerror(errno));
+
+			if (fstat(fileno(file), &second_file_stat) != 0)
+			{
+				fprintf(stderr, _("can't stat file `%s': %s\n"), absolute_path, strerror(errno));
+				exit(-1);
+			}
+
+			if (file_stat.st_dev != second_file_stat.st_dev || file_stat.st_ino != second_file_stat.st_ino)
+			{
+				fprintf(stderr, _("TOCTOU detected on `%s'!\n"), absolute_path);
+				exit(-1);
+			}
 
 			audit_file(absolute_path, file);
 
