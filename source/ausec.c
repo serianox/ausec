@@ -138,6 +138,71 @@ static void parse_arguments(int argc, char * argv[])
 	HMAC_Init_ex(&hmac_context, hmac_key, strlen(hmac_key), EVP_sha256(), NULL);
 }
 
+const int glob_match = 0, glob_none = -1, glob_partial = 1;
+
+static int do_glob(const char * pattern, const char * path)
+{
+	const char * pattern_end = pattern + strlen(pattern);
+	const char * path_end = path + strlen(path);
+
+	goto start;
+
+	next_pattern:
+		if (++pattern == pattern_end)
+			goto end_match;
+	next:
+		if (++path == path_end)
+			goto end_partial;
+
+	start:
+		if (*pattern == '?')
+			goto match_eroteme;
+		if (*pattern == '*')
+			goto match_star;
+		goto match_default;
+
+	match_default:
+		if (*pattern != *path)
+			goto error;
+		goto next_pattern;
+
+	match_eroteme:
+		if (*path == '/')
+			goto error;
+		goto next_pattern;
+
+	match_star:
+		if (++pattern != pattern_end)
+			goto match_star_lookahead;
+		goto match_star_tail;
+
+	match_star_tail:
+		if (*path == '/')
+			goto end_partial;
+		if (++path != path_end)
+			goto end_match;
+		goto match_star_tail;
+
+	match_star_lookahead:
+		if (*path == *pattern)
+			goto next_pattern;
+		if (*path == '/')
+			goto next;
+		if (++path == path_end)
+			goto end_none;
+		goto match_star_lookahead;
+
+	error:
+	end_none:
+		return glob_none;
+
+	end_partial:
+		return glob_partial;
+
+	end_match:
+		return glob_match;
+}
+
 static char * get_xattr(FILE * fd)
 {
 	ssize_t buffer_size = fgetxattr(fileno(fd), AUSEC_XATTR_NAME, NULL, 0);
@@ -356,6 +421,19 @@ int main(int argc, char * argv[])
 	parse_arguments(argc, argv);
 
 	walk_directory(".");
+
+	printf("%i %i\n", glob_match, do_glob("/foo/foo", "/foo/foo"));
+	printf("%i %i\n", glob_partial, do_glob("/foo/foo", "/foo/"));
+	printf("%i %i\n", glob_match, do_glob("/foo/f?", "/foo/fo"));
+	printf("%i %i\n", glob_partial, do_glob("/foo/f?o", "/foo/fo"));
+	printf("%i %i\n", glob_match, do_glob("/foo/f?o", "/foo/foo"));
+	printf("%i %i\n", glob_none, do_glob("/foo/f?o", "/foo/f/o"));
+	printf("%i %i\n", glob_match, do_glob("/""*/foo", "/bar/foo"));
+	printf("%i %i\n", glob_match, do_glob("/b*/foo", "/bar/foo"));
+	printf("%i %i\n", glob_match, do_glob("/b*r/foo", "/bar/foo"));
+	printf("%i %i\n", glob_partial, do_glob("/b*ar/foo", "/b"));
+	printf("%i %i\n", glob_match, do_glob("/bar/*", "/bar/foo"));
+	printf("%i %i\n", glob_match, do_glob("/bar/f*", "/bar/foo"));
 
 	cleanup();
 }
