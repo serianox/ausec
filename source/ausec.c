@@ -203,7 +203,7 @@ static int do_glob(const char * pattern, const char * path)
 		return glob_match;
 }
 
-static char * get_xattr(FILE * fd)
+static char * get_xattr(const char * filename, FILE * fd)
 {
 	ssize_t buffer_size = fgetxattr(fileno(fd), AUSEC_XATTR_NAME, NULL, 0);
 
@@ -225,20 +225,20 @@ static char * get_xattr(FILE * fd)
 	return buffer;
 
 	read_failure:
-		fprintf(stderr, _("could not read attribute: %s\n"), strerror(errno));
+		fprintf(stderr, _("could not read extended attribute of `%s': %s\n"), filename, strerror(errno));
 
 	return NULL;
 }
 
-static void set_xattr(FILE * fd, char * value)
+static void set_xattr(const char * filename, FILE * fd, char * value)
 {
 	if (fsetxattr(fileno(fd), AUSEC_XATTR_NAME, value, strlen(value), 0) == -1)
-		fprintf(stderr, _("could not set attribute: %s\n"), strerror(errno));
+		fprintf(stderr, _("could not set extended attribute of `%s': %s\n"), filename, strerror(errno));
 }
 
 static void audit_file(const char * path, FILE * file, struct stat file_stat)
 {
-	char * current_xattr_value = get_xattr(file);
+	char * current_xattr_value = get_xattr(path, file);
 
 	HMAC_Init_ex(&hmac_context, NULL, 0, NULL, NULL);
 
@@ -283,7 +283,7 @@ static void audit_file(const char * path, FILE * file, struct stat file_stat)
 	}
 
 	if (configuration.update)
-		set_xattr(file, new_xattr_value);
+		set_xattr(path, file, new_xattr_value);
 }
 
 static void walk_directory_recursive(const char * path, DIR * directory, const char * pattern)
