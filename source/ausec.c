@@ -286,7 +286,7 @@ static void audit_file(const char * path, FILE * file, struct stat file_stat)
 		set_xattr(file, new_xattr_value);
 }
 
-static void walk_directory_recursive(const char * path, DIR * directory)
+static void walk_directory_recursive(const char * path, DIR * directory, const char * pattern)
 {
 	struct dirent * directory_entry;
 	struct stat file_stat, second_file_stat;
@@ -299,7 +299,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 		char * relative_path = directory_entry->d_name;
 		char * absolute_path = (char *) malloc(snprintf(NULL, 0, "%s/%s", path, relative_path) + 1);
 		sprintf(absolute_path, "%s/%s", path, relative_path);
-		printf("%s\n", absolute_path); // DEBUG
+		//printf("%s\n", absolute_path); // DEBUG
 
 		if (lstat(relative_path, &file_stat) != 0)
 		{
@@ -334,7 +334,8 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 				continue;
 			}
 
-			walk_directory_recursive(absolute_path, new_directory);
+			if (do_glob(pattern, absolute_path) != glob_none)
+				walk_directory_recursive(absolute_path, new_directory, pattern);
 
 			closedir(new_directory);
 
@@ -364,7 +365,8 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 				exit(-1);
 			}
 
-			audit_file(absolute_path, file, file_stat);
+			if (do_glob(pattern, absolute_path) == glob_match)
+				audit_file(absolute_path, file, file_stat);
 
 			fclose(file);
 		}
@@ -379,7 +381,7 @@ static void walk_directory_recursive(const char * path, DIR * directory)
 		fprintf(stderr, _("error while walking directory `%s': %s\n"), path, strerror(errno));
 }
 
-static void walk_directory(const char * path)
+static void walk_directory(const char * path, const char * pattern)
 {
 	DIR * starting_directory;
 	if ((starting_directory = opendir(path)) == NULL)
@@ -394,7 +396,7 @@ static void walk_directory(const char * path)
 		return;
 	}
 
-	walk_directory_recursive(path, starting_directory);
+	walk_directory_recursive(path, starting_directory, pattern);
 
 	closedir(starting_directory);
 }
@@ -420,20 +422,7 @@ int main(int argc, char * argv[])
 
 	parse_arguments(argc, argv);
 
-	walk_directory(".");
-
-	printf("%i %i\n", glob_match, do_glob("/foo/foo", "/foo/foo"));
-	printf("%i %i\n", glob_partial, do_glob("/foo/foo", "/foo/"));
-	printf("%i %i\n", glob_match, do_glob("/foo/f?", "/foo/fo"));
-	printf("%i %i\n", glob_partial, do_glob("/foo/f?o", "/foo/fo"));
-	printf("%i %i\n", glob_match, do_glob("/foo/f?o", "/foo/foo"));
-	printf("%i %i\n", glob_none, do_glob("/foo/f?o", "/foo/f/o"));
-	printf("%i %i\n", glob_match, do_glob("/""*/foo", "/bar/foo"));
-	printf("%i %i\n", glob_match, do_glob("/b*/foo", "/bar/foo"));
-	printf("%i %i\n", glob_match, do_glob("/b*r/foo", "/bar/foo"));
-	printf("%i %i\n", glob_partial, do_glob("/b*ar/foo", "/b"));
-	printf("%i %i\n", glob_match, do_glob("/bar/*", "/bar/foo"));
-	printf("%i %i\n", glob_match, do_glob("/bar/f*", "/bar/foo"));
+	walk_directory(".", "./test/" "*");
 
 	cleanup();
 }
