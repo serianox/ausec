@@ -42,6 +42,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 #include <attr/xattr.h>
 
@@ -319,7 +320,7 @@ static void walk_directory_recursive(const char * path, DIR * directory, const c
 			if (fstat(dirfd(new_directory), &second_file_stat) != 0)
 			{
 				fprintf(stderr, _("can't stat directory `%s': %s\n"), absolute_path, strerror(errno));
-				exit(-1);
+				continue;
 			}
 
 			if (file_stat.st_dev != second_file_stat.st_dev || file_stat.st_ino != second_file_stat.st_ino)
@@ -351,12 +352,15 @@ static void walk_directory_recursive(const char * path, DIR * directory, const c
 			FILE * file = fopen(relative_path, "rb");
 
 			if (!file)
+			{
 				fprintf(stderr, _("can't open file `%s': %s\n"), absolute_path, strerror(errno));
+				continue;
+			}
 
 			if (fstat(fileno(file), &second_file_stat) != 0)
 			{
 				fprintf(stderr, _("can't stat file `%s': %s\n"), absolute_path, strerror(errno));
-				exit(-1);
+				continue;
 			}
 
 			if (file_stat.st_dev != second_file_stat.st_dev || file_stat.st_ino != second_file_stat.st_ino)
@@ -406,21 +410,53 @@ static void cleanup(void)
 	HMAC_CTX_cleanup(&hmac_context);
 }
 
-static void init(void)
+static void read_config(const char * config_path)
 {
+	FILE * config_file; if ((config_file = fopen(config_path, "rb")) == NULL)
+	{
+		fprintf(stderr, _("can't open file `%s': %s\n"), config_path, strerror(errno));
+		return;
+	}
+
+	struct stat config_stat; if (fstat(fileno(config_file), &config_stat) != 0)
+	{
+		fprintf(stderr, _("can't stat file `%s': %s\n"), config_path, strerror(errno));
+		return;
+	}
+
+	// empty file will cause mmap to fail allocation :(
+	if (config_stat.st_size == 0)
+		goto close;
+
+	const char * config; if ((config = mmap(NULL, config_stat.st_size, PROT_READ, MAP_SHARED, fileno(config_file), 0)) == MAP_FAILED)
+	{
+		fprintf(stderr, _("can't mmap file `%s': %s\n"), config_path, strerror(errno));
+		return;
+	}
+
+	munmap((void *) config, config_stat.st_size);
+
+	close:
+		fclose(config_file);
+}
+
+static void init(int argc, char * argv[])
+{
+	read_config("./etc/ausec.cfg");
+
 	ENGINE_load_builtin_engines();
 	ENGINE_register_all_complete();
 
 	HMAC_CTX_init(&hmac_context);
 
 	atexit(&cleanup);
+
+	parse_arguments(argc, argv);
 }
 
 int main(int argc, char * argv[])
 {
-	init();
-
-	parse_arguments(argc, argv);
+	init(argc, argv);
 
 	walk_directory(".", "./test/" "*");
 
