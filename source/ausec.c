@@ -54,6 +54,13 @@
 
 static const char * AUSEC_XATTR_NAME = "user.integrity.ausec";
 
+struct pattern_node
+{
+	unsigned depth;
+	char * pattern;
+	struct pattern_node * parent, * child, * next;
+};
+
 static struct
 {
 	bool check;
@@ -415,8 +422,10 @@ static void parse_config(const char * config, const size_t config_size)
 	const char * config_end = config + config_size;
 
 	const char * path_begin, * path_end;
-	char delimiter, * path_;
-	unsigned tabs;
+	char delimiter;
+	unsigned depth;
+	char * pattern;
+	struct pattern_node * current_node = NULL, * new_node;
 
 	goto start;
 
@@ -425,17 +434,19 @@ static void parse_config(const char * config, const size_t config_size)
 			goto end;
 
 	start:
-		tabs = 0;
+		new_node = (struct pattern_node *) calloc(1, sizeof(struct pattern_node));
+		depth = 0;
 		goto indent;
 
 	tab:
-		++tabs;
+		++depth;
 		if (++config == config_end)
 			goto end;
 
 	indent:
 		if (*config == '\t')
 			goto tab;
+		new_node->depth = depth;
 		delimiter = *config;
 		if (++config == config_end)
 			goto error_partial;
@@ -451,6 +462,11 @@ static void parse_config(const char * config, const size_t config_size)
 			goto path_next;
 
 		path_end = config;
+
+		pattern = (char *) calloc(1, path_end - path_begin + 1);
+		memcpy(pattern, path_begin, path_end - path_begin);
+		new_node->pattern = pattern;
+
 		if (++config == config_end)
 			goto error_partial;
 
@@ -468,13 +484,40 @@ static void parse_config(const char * config, const size_t config_size)
 		goto options;
 
 	finish_line:
-		path_ = (char *) malloc(path_end - path_begin);
-		memcpy(path_, path_begin, path_end - path_begin);
-		printf("%s\n", path_);
+		if (current_node == NULL)
+		{
+			if (depth != 0)
+				goto error_first;
+
+			new_node->parent = new_node;
+		}
+		else
+		{
+			while (current_node->depth > depth)
+				current_node = current_node->parent;
+
+			if (current_node->depth == depth)
+			{
+				current_node->next = new_node;
+				new_node->parent = current_node->parent;
+			}
+			else if (current_node->depth + 1 == depth)
+			{
+				current_node->child = new_node;
+				new_node->parent = current_node;
+			}
+			else
+				goto error_depth;
+		}
+		current_node = new_node;
+		printf("%s %i\n", current_node->pattern, current_node->depth);
 		goto new_line;
 
+	error_first:
 	error_option:
 	error_partial:
+	error_depth:
+		fprintf(stderr, "error while reading configuration (and too lazy to give a precise diagnostic)\n");
 		return;
 
 	end:
