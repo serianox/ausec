@@ -410,6 +410,77 @@ static void cleanup(void)
 	HMAC_CTX_cleanup(&hmac_context);
 }
 
+static void parse_config(const char * config, const size_t config_size)
+{
+	const char * config_end = config + config_size;
+
+	const char * path_begin, * path_end;
+	char delimiter, * path_;
+	unsigned tabs;
+
+	goto start;
+
+	new_line:
+		if (++config == config_end)
+			goto end;
+
+	start:
+		tabs = 0;
+		goto indent;
+
+	tab:
+		++tabs;
+		if (++config == config_end)
+			goto end;
+
+	indent:
+		if (*config == '\t')
+			goto tab;
+		delimiter = *config;
+		if (++config == config_end)
+			goto error_partial;
+		path_begin = config;
+		goto path;
+
+	path_next:
+		if (++config == config_end)
+			goto error_partial;
+
+	path:
+		if (*config != delimiter)
+			goto path_next;
+
+		path_end = config;
+		if (++config == config_end)
+			goto error_partial;
+
+	options:
+		if (*config == '\n')
+			goto finish_line;
+		if (*config == '+')
+			goto add_option;
+		if (*config == '-')
+			goto remove_option;
+		goto error_option;
+
+	add_option:
+	remove_option:
+		goto options;
+
+	finish_line:
+		path_ = (char *) malloc(path_end - path_begin);
+		memcpy(path_, path_begin, path_end - path_begin);
+		printf("%s\n", path_);
+		goto new_line;
+
+	error_option:
+	error_partial:
+		return;
+
+	end:
+		return;
+}
+
 static void read_config(const char * config_path)
 {
 	FILE * config_file; if ((config_file = fopen(config_path, "rb")) == NULL)
@@ -433,6 +504,8 @@ static void read_config(const char * config_path)
 		fprintf(stderr, _("can't mmap file `%s': %s\n"), config_path, strerror(errno));
 		return;
 	}
+
+	parse_config(config, config_stat.st_size);
 
 	munmap((void *) config, config_stat.st_size);
 
