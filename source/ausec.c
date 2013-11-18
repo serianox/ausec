@@ -508,7 +508,14 @@ static void parse_config(const char * config, const size_t config_size)
 			}
 			else
 				goto error_depth;
+
+			pattern = (char *) calloc(1, strlen(new_node->pattern) + strlen(new_node->parent->pattern) + 1);
+			strcat(pattern, new_node->parent->pattern);
+			strcat(pattern, new_node->pattern);
+			free(new_node->pattern);
+			new_node->pattern = pattern;
 		}
+
 		current_node = new_node;
 		printf("%s %i\n", current_node->pattern, current_node->depth);
 		goto new_line;
