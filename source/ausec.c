@@ -56,7 +56,7 @@ static const char * AUSEC_XATTR_NAME = "user.integrity.ausec";
 
 struct pattern_node
 {
-	unsigned depth;
+	signed depth;
 	char * pattern;
 	struct pattern_node * parent, * child, * next;
 };
@@ -423,9 +423,13 @@ static void parse_config(const char * config, const size_t config_size)
 
 	const char * path_begin, * path_end;
 	char delimiter;
-	unsigned depth;
+	signed depth;
 	char * pattern;
-	struct pattern_node * current_node = NULL, * new_node;
+	struct pattern_node * current_node = (struct pattern_node *) calloc(1, sizeof(struct pattern_node)), * root_node = current_node, * new_node;
+
+	current_node->depth = -1;
+	current_node->pattern = "";
+	current_node->parent = current_node;
 
 	goto start;
 
@@ -484,43 +488,32 @@ static void parse_config(const char * config, const size_t config_size)
 		goto options;
 
 	finish_line:
-		if (current_node == NULL)
-		{
-			if (depth != 0)
-				goto error_first;
+		while (current_node->depth > depth)
+			current_node = current_node->parent;
 
-			new_node->parent = new_node;
+		if (current_node->depth == depth)
+		{
+			current_node->next = new_node;
+			new_node->parent = current_node->parent;
+		}
+		else if (current_node->depth + 1 == depth)
+		{
+			current_node->child = new_node;
+			new_node->parent = current_node;
 		}
 		else
-		{
-			while (current_node->depth > depth)
-				current_node = current_node->parent;
+			goto error_depth;
 
-			if (current_node->depth == depth)
-			{
-				current_node->next = new_node;
-				new_node->parent = current_node->parent;
-			}
-			else if (current_node->depth + 1 == depth)
-			{
-				current_node->child = new_node;
-				new_node->parent = current_node;
-			}
-			else
-				goto error_depth;
-
-			pattern = (char *) calloc(1, strlen(new_node->pattern) + strlen(new_node->parent->pattern) + 1);
-			strcat(pattern, new_node->parent->pattern);
-			strcat(pattern, new_node->pattern);
-			free(new_node->pattern);
-			new_node->pattern = pattern;
-		}
+		pattern = (char *) calloc(1, strlen(new_node->pattern) + strlen(new_node->parent->pattern) + 1);
+		strcat(pattern, new_node->parent->pattern);
+		strcat(pattern, new_node->pattern);
+		free(new_node->pattern);
+		new_node->pattern = pattern;
 
 		current_node = new_node;
 		printf("%s %i\n", current_node->pattern, current_node->depth);
 		goto new_line;
 
-	error_first:
 	error_option:
 	error_partial:
 	error_depth:
@@ -528,6 +521,7 @@ static void parse_config(const char * config, const size_t config_size)
 		return;
 
 	end:
+		(void) root_node;
 		return;
 }
 
