@@ -58,7 +58,7 @@ struct pattern_node
 {
 	signed depth;
 	char * pattern;
-	struct pattern_node * parent, * child, * next;
+	struct pattern_node * parent, * child, * sibbling, * next;
 };
 
 static struct
@@ -417,7 +417,48 @@ static void cleanup(void)
 	HMAC_CTX_cleanup(&hmac_context);
 }
 
-static void parse_config(const char * config, const size_t config_size)
+static struct pattern_node * transform_pattern_tree(struct pattern_node * root_node)
+{
+	struct pattern_node * start_node, * current_node = root_node;
+
+	for (; current_node->child != NULL; current_node = current_node->child);
+
+	start_node = current_node;
+
+	walking : while (true)
+	{
+		if (current_node->child != NULL)
+		{
+			current_node = current_node->child;
+			continue;
+		}
+
+		if (current_node->sibbling != NULL)
+		{
+			current_node->next = current_node->sibbling;
+			current_node = current_node->next;
+			continue;
+		}
+
+		while (current_node->parent != root_node)
+		{
+			current_node->next = current_node->parent;
+			current_node = current_node->parent;
+
+			if (current_node->sibbling != NULL)
+			{
+				current_node = current_node->sibbling;
+				goto walking;
+			}
+		}
+
+		break;
+	}
+
+	return start_node;
+}
+
+static struct pattern_node * parse_config(const char * config, const size_t config_size)
 {
 	const char * config_end = config + config_size;
 
@@ -493,7 +534,7 @@ static void parse_config(const char * config, const size_t config_size)
 
 		if (current_node->depth == depth)
 		{
-			current_node->next = new_node;
+			current_node->sibbling = new_node;
 			new_node->parent = current_node->parent;
 		}
 		else if (current_node->depth + 1 == depth)
@@ -518,11 +559,10 @@ static void parse_config(const char * config, const size_t config_size)
 	error_partial:
 	error_depth:
 		fprintf(stderr, "error while reading configuration (and too lazy to give a precise diagnostic)\n");
-		return;
+		return NULL;
 
 	end:
-		(void) root_node;
-		return;
+		return transform_pattern_tree(root_node);
 }
 
 static void read_config(const char * config_path)
@@ -549,7 +589,9 @@ static void read_config(const char * config_path)
 		return;
 	}
 
-	parse_config(config, config_stat.st_size);
+	if (parse_config(config, config_stat.st_size) != NULL)
+	{
+	}
 
 	munmap((void *) config, config_stat.st_size);
 
