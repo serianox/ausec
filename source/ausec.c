@@ -440,14 +440,15 @@ static struct pattern_node * transform_pattern_tree(struct pattern_node * root_n
 			continue;
 		}
 
-		while (current_node->parent != root_node)
+		while (current_node != root_node)
 		{
 			current_node->next = current_node->parent;
-			current_node = current_node->parent;
+			current_node = current_node->next;
 
 			if (current_node->sibbling != NULL)
 			{
-				current_node = current_node->sibbling;
+				current_node->next = current_node->sibbling;
+				current_node = current_node->next;
 				goto walking;
 			}
 		}
@@ -552,7 +553,6 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 		new_node->pattern = pattern;
 
 		current_node = new_node;
-		printf("%s %i\n", current_node->pattern, current_node->depth);
 		goto new_line;
 
 	error_option:
