@@ -150,6 +150,8 @@ const int glob_match = 0, glob_none = -1, glob_partial = 1;
 
 static int do_glob(const char * pattern, const char * path)
 {
+	printf("pattern: %s, path: %s, result: ", pattern, path);
+
 	const char * pattern_end = pattern + strlen(pattern);
 	const char * path_end = path + strlen(path);
 
@@ -202,12 +204,15 @@ static int do_glob(const char * pattern, const char * path)
 
 	error:
 	end_none:
+		printf("none\n");
 		return glob_none;
 
 	end_partial:
+		printf("partial\n");
 		return glob_partial;
 
 	end_match:
+		printf("match\n");
 		return glob_match;
 }
 
@@ -294,7 +299,7 @@ static void audit_file(const char * path, FILE * file, struct stat file_stat)
 		set_xattr(path, file, new_xattr_value);
 }
 
-static void walk_directory_recursive(const char * path, DIR * directory, const char * pattern)
+static void walk_directory_recursive(const char * path, DIR * directory, struct pattern_node * patterns)
 {
 	struct dirent * directory_entry;
 	struct stat file_stat, second_file_stat;
@@ -342,8 +347,14 @@ static void walk_directory_recursive(const char * path, DIR * directory, const c
 				continue;
 			}
 
-			if (do_glob(pattern, absolute_path) != glob_none)
-				walk_directory_recursive(absolute_path, new_directory, pattern);
+			for (struct pattern_node * current_pattern = patterns; current_pattern != NULL; current_pattern = current_pattern->next)
+			{
+				if (do_glob(current_pattern->pattern, absolute_path) != glob_none)
+				{
+					walk_directory_recursive(absolute_path, new_directory, current_pattern);
+					break;
+				}
+			}
 
 			closedir(new_directory);
 
@@ -376,8 +387,14 @@ static void walk_directory_recursive(const char * path, DIR * directory, const c
 				exit(-1);
 			}
 
-			if (do_glob(pattern, absolute_path) == glob_match)
-				audit_file(absolute_path, file, file_stat);
+			for (struct pattern_node * current_pattern = patterns; current_pattern != NULL; current_pattern = current_pattern->next)
+			{
+				if (do_glob(current_pattern->pattern, absolute_path) == glob_match)
+				{
+					audit_file(absolute_path, file, file_stat);
+					break;
+				}
+			}
 
 			fclose(file);
 		}
@@ -392,7 +409,7 @@ static void walk_directory_recursive(const char * path, DIR * directory, const c
 		fprintf(stderr, _("error while walking directory `%s': %s\n"), path, strerror(errno));
 }
 
-static void walk_directory(const char * path, const char * pattern)
+static void walk_directory(const char * path, struct pattern_node * patterns)
 {
 	DIR * starting_directory;
 	if ((starting_directory = opendir(path)) == NULL)
@@ -407,7 +424,7 @@ static void walk_directory(const char * path, const char * pattern)
 		return;
 	}
 
-	walk_directory_recursive(path, starting_directory, pattern);
+	walk_directory_recursive(path, starting_directory, patterns);
 
 	closedir(starting_directory);
 }
@@ -589,9 +606,8 @@ static void read_config(const char * config_path)
 		return;
 	}
 
-	if (parse_config(config, config_stat.st_size) != NULL)
-	{
-	}
+	struct pattern_node * patterns; if ((patterns = parse_config(config, config_stat.st_size)) != NULL)
+		walk_directory(".", patterns);
 
 	munmap((void *) config, config_stat.st_size);
 
@@ -601,8 +617,6 @@ static void read_config(const char * config_path)
 
 static void init(int argc, char * argv[])
 {
-	read_config("./etc/ausec.cfg");
-
 	ENGINE_load_builtin_engines();
 	ENGINE_register_all_complete();
 
@@ -611,11 +625,11 @@ static void init(int argc, char * argv[])
 	atexit(&cleanup);
 
 	parse_arguments(argc, argv);
+
+	read_config("./etc/ausec.cfg");
 }
 
 int main(int argc, char * argv[])
 {
 	init(argc, argv);
-
-	walk_directory(".", "./test/" "*");
 }
