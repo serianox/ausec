@@ -54,7 +54,7 @@
 
 #define AUSEC_XATTR_NAME "user.integrity.ausec"
 #define AUSEC_DEFAULT_CONFIGURATION_FILE "/etc/ausec.cfg"
-#define AUSEC_DEFAULT_ROOT_DIRECTORY "/"
+#define AUSEC_DEFAULT_ROOT_DIRECTORY NULL
 
 struct pattern_node
 {
@@ -107,7 +107,6 @@ Usage: %s [options] [configuration_file] [root_directory]\n\
 	-c, --check     check the files against theirs signatures\n\
 	-u, --update    update the files' signatures\n\
 ", program);
-	exit(0);
 }
 
 static void parse_arguments(int argc, char * argv[])
@@ -143,9 +142,12 @@ static void parse_arguments(int argc, char * argv[])
 				hmac_key = optarg;
 				break;
 			case 'h':
+				usage(0[argv]);
+				exit(0);
 			case '?':
 			case ':':
 				usage(0[argv]);
+				exit(-1);
 			case 0:
 				if (strcmp("verbose", long_options[option_index].name) == 0)
 					configuration.verbose = true;
@@ -159,6 +161,12 @@ static void parse_arguments(int argc, char * argv[])
 
 	if ((argc - optind) > 0)
 		configuration.root_directory = (optind++)[argv];
+
+	if ((argc - optind) > 0)
+	{
+		usage(0[argv]);
+		exit(-1);
+	}
 
 	if (!configuration.check && !configuration.update)
 	{
@@ -437,7 +445,7 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 static void walk_directory(const char * path, struct pattern_node * patterns)
 {
 	DIR * starting_directory;
-	if ((starting_directory = opendir(path)) == NULL)
+	if ((starting_directory = opendir((path == AUSEC_DEFAULT_ROOT_DIRECTORY)? "/": path)) == NULL)
 	{
 		log_error(_("error when opening directory `%s': %s"), path, strerror(errno));
 		return;
@@ -449,7 +457,7 @@ static void walk_directory(const char * path, struct pattern_node * patterns)
 		return;
 	}
 
-	walk_directory_recursive(path, starting_directory, patterns);
+	walk_directory_recursive(((path == AUSEC_DEFAULT_ROOT_DIRECTORY)? "": path), starting_directory, patterns);
 
 	closedir(starting_directory);
 }
