@@ -52,7 +52,9 @@
 
 #define _(STRING) gettext(STRING)
 
-static const char * AUSEC_XATTR_NAME = "user.integrity.ausec";
+#define AUSEC_XATTR_NAME "user.integrity.ausec"
+#define AUSEC_DEFAULT_CONFIGURATION_FILE "/etc/ausec.cfg"
+#define AUSEC_DEFAULT_ROOT_DIRECTORY "/"
 
 struct pattern_node
 {
@@ -66,12 +68,16 @@ static struct
 	bool check;
 	bool update;
 	bool verbose;
+	const char * configuration_file;
+	const char * root_directory;
 }
 configuration =
 {
 	.check = false,
 	.update = false,
 	.verbose = false,
+	.configuration_file = AUSEC_DEFAULT_CONFIGURATION_FILE,
+	.root_directory = AUSEC_DEFAULT_ROOT_DIRECTORY,
 };
 
 static char * hmac_key = NULL;
@@ -96,7 +102,7 @@ HMAC_CTX hmac_context;
 static void usage(const char * program)
 {
 	printf("\
-Usage: %s [OPTION]\n\
+Usage: %s [options] [configuration_file] [root_directory]\n\
 	-k, --key=KEY   key to be used in the signature computation\n\
 	-c, --check     check the files against theirs signatures\n\
 	-u, --update    update the files' signatures\n\
@@ -147,6 +153,12 @@ static void parse_arguments(int argc, char * argv[])
 				break;
 		}
 	}
+
+	if ((argc - optind) > 0)
+		configuration.configuration_file = (optind++)[argv];
+
+	if ((argc - optind) > 0)
+		configuration.root_directory = (optind++)[argv];
 
 	if (!configuration.check && !configuration.update)
 	{
@@ -620,7 +632,7 @@ static void read_config(const char * config_path)
 	}
 
 	struct pattern_node * patterns; if ((patterns = parse_config(config, config_stat.st_size)) != NULL)
-		walk_directory(".", patterns);
+		walk_directory(configuration.root_directory, patterns);
 
 	munmap((void *) config, config_stat.st_size);
 
@@ -639,5 +651,5 @@ int main(int argc, char * argv[])
 
 	parse_arguments(argc, argv);
 
-	read_config("./etc/ausec.cfg");
+	read_config(configuration.configuration_file);
 }
