@@ -78,6 +78,18 @@ static char * hmac_key = NULL;
 
 HMAC_CTX hmac_context;
 
+#define log_debug(...) \
+	((configuration.verbose)? fprintf(stderr, __VA_ARGS__): 0)
+
+#define log_verbose(...) \
+	((configuration.verbose)? fprintf(stderr, __VA_ARGS__): 0)
+
+#define log_message(...) \
+	(fprintf(stdout, __VA_ARGS__))
+
+#define log_error(...) \
+	(fprintf(stderr, __VA_ARGS__))
+
 static void usage(const char * program)
 {
 	printf("\
@@ -118,7 +130,7 @@ static void parse_arguments(int argc, char * argv[])
 				break;
 			case 'k':
 				if (hmac_key != NULL)
-					fprintf(stderr, _("HMAC key was already previously set\n"));
+					log_error(_("HMAC key was already previously set\n"));
 
 				hmac_key = optarg;
 				break;
@@ -150,7 +162,7 @@ const int glob_match = 0, glob_none = -1, glob_partial = 1;
 
 static int do_glob(const char * pattern, const char * path)
 {
-	printf("pattern: %s, path: %s, result: ", pattern, path);
+	log_debug("pattern: %s, path: %s, result: ", pattern, path);
 
 	const char * pattern_end = pattern + strlen(pattern);
 	const char * path_end = path + strlen(path);
@@ -204,15 +216,15 @@ static int do_glob(const char * pattern, const char * path)
 
 	error:
 	end_none:
-		printf("none\n");
+		log_debug("none\n");
 		return glob_none;
 
 	end_partial:
-		printf("partial\n");
+		log_debug("partial\n");
 		return glob_partial;
 
 	end_match:
-		printf("match\n");
+		log_debug("match\n");
 		return glob_match;
 }
 
@@ -238,7 +250,7 @@ static char * get_xattr(const char * filename, FILE * fd)
 	return buffer;
 
 	read_failure:
-		fprintf(stderr, _("could not read extended attribute of `%s': %s\n"), filename, strerror(errno));
+		log_error(_("could not read extended attribute of `%s': %s\n"), filename, strerror(errno));
 
 	return NULL;
 }
@@ -246,7 +258,7 @@ static char * get_xattr(const char * filename, FILE * fd)
 static void set_xattr(const char * filename, FILE * fd, char * value)
 {
 	if (fsetxattr(fileno(fd), AUSEC_XATTR_NAME, value, strlen(value), 0) == -1)
-		fprintf(stderr, _("could not set extended attribute of `%s': %s\n"), filename, strerror(errno));
+		log_error(_("could not set extended attribute of `%s': %s\n"), filename, strerror(errno));
 }
 
 static void audit_file(const char * path, FILE * file, struct stat file_stat)
@@ -273,7 +285,7 @@ static void audit_file(const char * path, FILE * file, struct stat file_stat)
 
 	if (ferror(file))
 	{
-		fprintf(stderr, _("error while reading `%s': %s\n"), path, strerror(errno));
+		log_error(_("error while reading `%s': %s\n"), path, strerror(errno));
 		return;
 	}
 
@@ -290,9 +302,9 @@ static void audit_file(const char * path, FILE * file, struct stat file_stat)
 	if (configuration.check)
 	{
 		if (current_xattr_value == NULL)
-			fprintf(stdout, _("no signature found!\n"));
+			log_message(_("no signature found!\n"));
 		else if (strcmp(current_xattr_value, new_xattr_value))
-			fprintf(stdout, _("integrity mismatch!\n"));
+			log_message(_("integrity mismatch!\n"));
 	}
 
 	if (configuration.update)
@@ -312,11 +324,10 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 		char * relative_path = directory_entry->d_name;
 		char * absolute_path = (char *) malloc(snprintf(NULL, 0, "%s/%s", path, relative_path) + 1);
 		sprintf(absolute_path, "%s/%s", path, relative_path);
-		//printf("%s\n", absolute_path); // DEBUG
 
 		if (lstat(relative_path, &file_stat) != 0)
 		{
-			fprintf(stderr, _("can't stat file or directory `%s': %s\n"), absolute_path, strerror(errno));
+			log_error(_("can't stat file or directory `%s': %s\n"), absolute_path, strerror(errno));
 			continue;
 		}
 
@@ -325,25 +336,25 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 			DIR * new_directory;
 			if ((new_directory = opendir(relative_path)) == NULL)
 			{
-				fprintf(stderr, _("error when opening directory `%s': %s\n"), absolute_path, strerror(errno));
+				log_error(_("error when opening directory `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
 			if (fstat(dirfd(new_directory), &second_file_stat) != 0)
 			{
-				fprintf(stderr, _("can't stat directory `%s': %s\n"), absolute_path, strerror(errno));
+				log_error(_("can't stat directory `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
 			if (file_stat.st_dev != second_file_stat.st_dev || file_stat.st_ino != second_file_stat.st_ino)
 			{
-				fprintf(stderr, _("TOCTOU detected on `%s'!\n"), absolute_path);
+				log_error(_("TOCTOU detected on `%s'!\n"), absolute_path);
 				exit(-1);
 			}
 
 			if (fchdir(dirfd(new_directory)) != 0)
 			{
-				fprintf(stderr, _("can't change directory to `%s': %s\n"), absolute_path, strerror(errno));
+				log_error(_("can't change directory to `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
@@ -360,7 +371,7 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 
 			if (fchdir(dirfd(directory)) != 0)
 			{
-				fprintf(stderr, _("could not return to previous directory: %s\n"), strerror(errno));
+				log_error(_("could not return to previous directory: %s\n"), strerror(errno));
 				// can't do anything more if it happens, so it's time to panic
 				exit(-1);
 			}
@@ -371,19 +382,19 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 
 			if (!file)
 			{
-				fprintf(stderr, _("can't open file `%s': %s\n"), absolute_path, strerror(errno));
+				log_error(_("can't open file `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
 			if (fstat(fileno(file), &second_file_stat) != 0)
 			{
-				fprintf(stderr, _("can't stat file `%s': %s\n"), absolute_path, strerror(errno));
+				log_error(_("can't stat file `%s': %s\n"), absolute_path, strerror(errno));
 				continue;
 			}
 
 			if (file_stat.st_dev != second_file_stat.st_dev || file_stat.st_ino != second_file_stat.st_ino)
 			{
-				fprintf(stderr, _("TOCTOU detected on `%s'!\n"), absolute_path);
+				log_error(_("TOCTOU detected on `%s'!\n"), absolute_path);
 				exit(-1);
 			}
 
@@ -406,7 +417,7 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 	}
 
 	if (errno != 0)
-		fprintf(stderr, _("error while walking directory `%s': %s\n"), path, strerror(errno));
+		log_error(_("error while walking directory `%s': %s\n"), path, strerror(errno));
 }
 
 static void walk_directory(const char * path, struct pattern_node * patterns)
@@ -414,13 +425,13 @@ static void walk_directory(const char * path, struct pattern_node * patterns)
 	DIR * starting_directory;
 	if ((starting_directory = opendir(path)) == NULL)
 	{
-		fprintf(stderr, _("error when opening directory `%s': %s"), path, strerror(errno));
+		log_error(_("error when opening directory `%s': %s"), path, strerror(errno));
 		return;
 	}
 
 	if (fchdir(dirfd(starting_directory)) != 0)
 	{
-		fprintf(stderr, _("can't change directory to `%s': %s\n"), path, strerror(errno));
+		log_error(_("can't change directory to `%s': %s\n"), path, strerror(errno));
 		return;
 	}
 
@@ -575,7 +586,7 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 	error_option:
 	error_partial:
 	error_depth:
-		fprintf(stderr, "error while reading configuration (and too lazy to give a precise diagnostic)\n");
+		log_error("error while reading configuration (and too lazy to give a precise diagnostic)\n");
 		return NULL;
 
 	end:
@@ -586,13 +597,13 @@ static void read_config(const char * config_path)
 {
 	FILE * config_file; if ((config_file = fopen(config_path, "rb")) == NULL)
 	{
-		fprintf(stderr, _("can't open file `%s': %s\n"), config_path, strerror(errno));
+		log_error(_("can't open file `%s': %s\n"), config_path, strerror(errno));
 		return;
 	}
 
 	struct stat config_stat; if (fstat(fileno(config_file), &config_stat) != 0)
 	{
-		fprintf(stderr, _("can't stat file `%s': %s\n"), config_path, strerror(errno));
+		log_error(_("can't stat file `%s': %s\n"), config_path, strerror(errno));
 		return;
 	}
 
@@ -602,7 +613,7 @@ static void read_config(const char * config_path)
 
 	const char * config; if ((config = mmap(NULL, config_stat.st_size, PROT_READ, MAP_SHARED, fileno(config_file), 0)) == MAP_FAILED)
 	{
-		fprintf(stderr, _("can't mmap file `%s': %s\n"), config_path, strerror(errno));
+		log_error(_("can't mmap file `%s': %s\n"), config_path, strerror(errno));
 		return;
 	}
 
@@ -615,7 +626,7 @@ static void read_config(const char * config_path)
 		fclose(config_file);
 }
 
-static void init(int argc, char * argv[])
+int main(int argc, char * argv[])
 {
 	ENGINE_load_builtin_engines();
 	ENGINE_register_all_complete();
@@ -627,9 +638,4 @@ static void init(int argc, char * argv[])
 	parse_arguments(argc, argv);
 
 	read_config("./etc/ausec.cfg");
-}
-
-int main(int argc, char * argv[])
-{
-	init(argc, argv);
 }
