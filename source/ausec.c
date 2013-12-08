@@ -87,6 +87,9 @@ HMAC_CTX hmac_context;
 #define log_message(...) \
 	(fprintf(stdout, __VA_ARGS__))
 
+#define log_warning(...) \
+	(fprintf(stderr, __VA_ARGS__))
+
 #define log_error(...) \
 	(fprintf(stderr, __VA_ARGS__))
 
@@ -117,8 +120,7 @@ static void parse_arguments(int argc, char * argv[])
 		{NULL, no_argument, NULL, 0}
 	};
 
-	int option, option_index;
-	while ((option = getopt_long(argc, argv, options, long_options, &option_index)) != -1)
+	int option, option_index; while ((option = getopt_long(argc, argv, options, long_options, &option_index)) != -1)
 	{
 		switch (option)
 		{
@@ -130,7 +132,7 @@ static void parse_arguments(int argc, char * argv[])
 				break;
 			case 'k':
 				if (hmac_key != NULL)
-					log_error(_("HMAC key was already previously set\n"));
+					log_warning(_("HMAC key was already previously set\n"));
 
 				hmac_key = optarg;
 				break;
