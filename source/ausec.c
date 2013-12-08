@@ -470,7 +470,7 @@ static struct pattern_node * transform_pattern_tree(struct pattern_node * root_n
 			continue;
 		}
 
-		while (current_node != root_node)
+		while (current_node->parent != root_node)
 		{
 			current_node->next = current_node->parent;
 			current_node = current_node->next;
