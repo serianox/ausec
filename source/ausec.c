@@ -289,32 +289,50 @@ static void set_xattr(const char * filename, FILE * fd, char * value)
 		log_error(_("could not set extended attribute of `%s': %s\n"), filename, strerror(errno));
 }
 
-static void audit_file(const char * path, FILE * file, struct stat file_stat)
+static void audit_file(const char * path, FILE * file, struct stat file_stat, struct pattern_node_options options)
 {
 	char * current_xattr_value = get_xattr(path, file);
 
 	HMAC_Init_ex(&hmac_context, NULL, 0, NULL, NULL);
 
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_dev, sizeof file_stat.st_dev);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_ino, sizeof file_stat.st_ino);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_mode, sizeof file_stat.st_mode);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_uid, sizeof file_stat.st_uid);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_gid, sizeof file_stat.st_gid);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_size, sizeof file_stat.st_size);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_mtime, sizeof file_stat.st_mtime);
-	HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_ctime, sizeof file_stat.st_ctime);
+	if (options.device)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_dev, sizeof file_stat.st_dev);
 
-	// playing with memory^Wmatches
-	uint8_t input_buffer[file_stat.st_blksize];
-	size_t read_size;
+	if (options.inode)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_ino, sizeof file_stat.st_ino);
 
-	while ((read_size = fread(input_buffer, 1, file_stat.st_blksize, file)) != 0)
-		HMAC_Update(&hmac_context, input_buffer, read_size);
+	if (options.mode)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_mode, sizeof file_stat.st_mode);
 
-	if (ferror(file))
+	if (options.uid)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_uid, sizeof file_stat.st_uid);
+
+	if (options.gid)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_gid, sizeof file_stat.st_gid);
+
+	if (options.size)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_size, sizeof file_stat.st_size);
+
+	if (options.time)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_mtime, sizeof file_stat.st_mtime);
+
+	if (options.time)
+		HMAC_Update(&hmac_context, (const unsigned char *) &file_stat.st_ctime, sizeof file_stat.st_ctime);
+
+	if (options.content)
 	{
-		log_error(_("error while reading `%s': %s\n"), path, strerror(errno));
-		return;
+		// playing with memory^Wmatches
+		uint8_t input_buffer[file_stat.st_blksize];
+		size_t read_size;
+
+		while ((read_size = fread(input_buffer, 1, file_stat.st_blksize, file)) != 0)
+			HMAC_Update(&hmac_context, input_buffer, read_size);
+
+		if (ferror(file))
+		{
+			log_error(_("error while reading `%s': %s\n"), path, strerror(errno));
+			return;
+		}
 	}
 
 	uint8_t digest[EVP_MAX_MD_SIZE];
@@ -430,7 +448,7 @@ static void walk_directory_recursive(const char * path, DIR * directory, struct 
 			{
 				if (do_glob(current_pattern->pattern, absolute_path) == glob_match)
 				{
-					audit_file(absolute_path, file, file_stat);
+					audit_file(absolute_path, file, file_stat, current_pattern->options);
 					break;
 				}
 			}
