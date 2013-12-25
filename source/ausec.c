@@ -61,6 +61,10 @@ struct pattern_node
 	signed depth;
 	char * pattern;
 	struct pattern_node * parent, * child, * sibbling, * next;
+	struct
+	{
+		bool device, inode, mode, uid, gid, size, time, content;
+	} options;
 };
 
 static struct
