@@ -56,15 +56,17 @@
 #define AUSEC_DEFAULT_CONFIGURATION_FILE "/etc/ausec.cfg"
 #define AUSEC_DEFAULT_ROOT_DIRECTORY NULL
 
+struct pattern_node_options
+{
+	bool device, inode, mode, uid, gid, size, time, content;
+};
+
 struct pattern_node
 {
 	signed depth;
 	char * pattern;
 	struct pattern_node * parent, * child, * sibbling, * next;
-	struct
-	{
-		bool device, inode, mode, uid, gid, size, time, content;
-	} options;
+	struct pattern_node_options options;
 };
 
 static struct
@@ -526,6 +528,8 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 	current_node->depth = -1;
 	current_node->pattern = "";
 	current_node->parent = current_node;
+	current_node->options.size = true;
+	current_node->options.content = true;
 
 	goto start;
 
@@ -570,20 +574,6 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 		if (++config == config_end)
 			goto error_partial;
 
-	options:
-		if (*config == '\n')
-			goto finish_line;
-		if (*config == '+')
-			goto add_option;
-		if (*config == '-')
-			goto remove_option;
-		goto error_option;
-
-	add_option:
-	remove_option:
-		goto options;
-
-	finish_line:
 		while (current_node->depth > depth)
 			current_node = current_node->parent;
 
@@ -606,6 +596,22 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 		free(new_node->pattern);
 		new_node->pattern = pattern;
 
+		memcpy(&(new_node->options), &(new_node->parent->options), sizeof(struct pattern_node_options));
+
+	options:
+		if (*config == '\n')
+			goto finish_line;
+		if (*config == '+')
+			goto add_option;
+		if (*config == '-')
+			goto remove_option;
+		goto error_option;
+
+	add_option:
+	remove_option:
+		goto options;
+
+	finish_line:
 		current_node = new_node;
 		goto new_line;
 
