@@ -617,28 +617,19 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 
 		memcpy(&(new_node->options), &(new_node->parent->options), sizeof(struct pattern_node_options));
 
-	options:
+	read_options:
 		switch (*config++)
 		{
 			case '+':
 				add_option = true;
-				goto read_option;
+				goto read_options;
 			case '-':
 				add_option = false;
-				goto read_option;
-			case '\n':
-				goto finish_line;
-			default:
-				goto error_option;
-		}
-
-	read_option:
-		switch (*config++)
+				goto read_options;
 		#define parse_option(__option__, __c__) \
 			case __c__: \
 				new_node->options.__option__ = add_option; \
-				goto read_option;
-		{
+				goto read_options;
 			parse_option(device, 'd');
 			parse_option(inode, 'i');
 			parse_option(mode, 'm');
@@ -647,13 +638,24 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 			parse_option(size, 's');
 			parse_option(time, 't');
 			parse_option(content, 'c');
+		#undef parse_option
+			case '*':
+				new_node->options.device =
+				new_node->options.inode =
+				new_node->options.mode =
+				new_node->options.uid =
+				new_node->options.gid =
+				new_node->options.size =
+				new_node->options.time =
+				new_node->options.content =
+				true;
+				goto read_options;
 			case ',':
-				goto options;
+				goto read_options;
 			case '\n':
 				goto finish_line;
 			default:
 				goto error_option;
-		#undef parse_option
 		}
 
 	finish_line:
