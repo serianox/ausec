@@ -524,6 +524,7 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 	signed depth;
 	char * pattern;
 	struct pattern_node * current_node = (struct pattern_node *) calloc(1, sizeof(struct pattern_node)), * root_node = current_node, * new_node;
+	bool add_option = true;
 
 	current_node->depth = -1;
 	current_node->pattern = "";
@@ -534,7 +535,7 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 	goto start;
 
 	new_line:
-		if (++config == config_end)
+		if (config == config_end)
 			goto end;
 
 	start:
@@ -599,26 +600,73 @@ static struct pattern_node * parse_config(const char * config, const size_t conf
 		memcpy(&(new_node->options), &(new_node->parent->options), sizeof(struct pattern_node_options));
 
 	options:
-		if (*config == '\n')
-			goto finish_line;
-		if (*config == '+')
-			goto add_option;
-		if (*config == '-')
-			goto remove_option;
-		goto error_option;
+		switch (*config++)
+		{
+			case '+':
+				add_option = true;
+				goto read_option;
+			case '-':
+				add_option = false;
+				goto read_option;
+			case '\n':
+				goto finish_line;
+			default:
+				goto error_option;
+		}
 
-	add_option:
-	remove_option:
-		goto options;
+	read_option:
+		switch (*config++)
+		#define parse_option(__option__, __c__) \
+			case __c__: \
+				new_node->options.__option__ = add_option; \
+				goto read_option;
+		{
+			parse_option(device, 'd');
+			parse_option(inode, 'i');
+			parse_option(mode, 'm');
+			parse_option(uid, 'u');
+			parse_option(gid, 'g');
+			parse_option(size, 's');
+			parse_option(time, 't');
+			parse_option(content, 'c');
+			case ',':
+				goto options;
+			case '\n':
+				goto finish_line;
+			default:
+				goto error_option;
+		#undef parse_option
+		}
 
 	finish_line:
+		#define print_option(__option__, __s__) \
+			((new_node->options.__option__)?","__s__:"")
+		log_debug("`%s'%s%s%s%s%s%s%s%s\n",
+			new_node->pattern,
+			print_option(device, "device"),
+			print_option(inode, "inode"),
+			print_option(mode, "mode"),
+			print_option(uid, "uid"),
+			print_option(gid, "gid"),
+			print_option(size, "size"),
+			print_option(time, "time"),
+			print_option(content, "content")
+		);
+		#undef print_option
 		current_node = new_node;
+		add_option = true;
 		goto new_line;
 
 	error_option:
+		log_error("error while reading options (and too lazy to give a precise diagnostic)\n");
+		return NULL;
+
 	error_partial:
+		log_error("error while reading line (and too lazy to give a precise diagnostic)\n");
+		return NULL;
+
 	error_depth:
-		log_error("error while reading configuration (and too lazy to give a precise diagnostic)\n");
+		log_error("error while reading new line (and too lazy to give a precise diagnostic)\n");
 		return NULL;
 
 	end:
