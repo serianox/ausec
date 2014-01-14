@@ -2,6 +2,7 @@ target := ausec
 sourcedir := source
 includedir := include
 builddir := .build
+testdir := tests
 
 CFLAGS += -I$(includedir) `pkg-config --cflags openssl` -MMD -MP -O3 -g -std=gnu11 -Wall -Wextra -Wpedantic -Werror
 LDFLAGS += `pkg-config --libs openssl`
@@ -21,6 +22,9 @@ $(builddir)/%.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $< >$(basename $@).l
 
 $(objects): Makefile
+
+test: $(target)
+	py.test $(testdir)
 
 clean:
 	$(RM) $(objects)
